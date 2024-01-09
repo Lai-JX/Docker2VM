@@ -13,12 +13,13 @@ spec:
       path: /home/jxlai/myubuntu
 
   dnsPolicy: Default                # 域名解析策略和主机相同，防止不能访问网址
+  restartPolicy: OnFailure
   containers:
   - name: myubuntu                  # 容器名称
     imagePullPolicy: IfNotPresent   # 拉取策略
     image: ubuntu-ssh:v1            # 镜像
     command: [ "/bin/bash", "-c", "--" ]
-    args: [ "echo -e '123456\n123456\n' | passwd; service ssh restart; while true; do sleep 3600; done;" ]  # 不加这个while循环的话，这个pod很快就complete
+    args: [ "echo -e '123456\n123456\n' | passwd; service ssh restart; while true; do sleep 3600; done; " ]  # 不加这个while循环的话，这个pod很快就complete
     volumeMounts:
     - mountPath: /myubuntu
       name: myubuntu
@@ -35,7 +36,15 @@ spec:
     - name: ubuntu-port
       containerPort: 22  # 如果hostNetwork: true，hostPort必须跟containerPort一样，所以hostPort一般不写，端口也是占用宿主机上的端口
       protocol: TCP
-    # 就绪探测、健康探测、钩子函数、环境变量、hostAliases等（略）
+    # 就绪探测、健康探测、钩子函数、环境变量、hostAliases等
+    lifecycle:
+      preStop:  # 主容器终止前钩子
+        httpGet:                  # 异常退出前，保存镜像
+          path: '?container=myubuntu&image=ubuntu-ssh:v1'           # Url地址
+          port: 8000              # 端口
+          host: 192.168.1.104     # 主机地址
+          scheme: HTTP            # 支持的协议，http或https
+  
 
   tolerations:            # 容忍（以方便在打了污点的节点上运行）
   - key: nvidia.com/gpu
@@ -53,11 +62,12 @@ metadata:
 spec:
   selector:
     user: myubuntu
-  # type: NodePort
-  type: ClusterIP
+  type: NodePort
+  # type: ClusterIP
   ports:
     - name: ssh
-      port: 22
-      targetPort: 22
+      port: 22        # Service暴露的端口号
+      targetPort: 22  # pod的端口号
       protocol: TCP
-      # nodePort: 32322
+      nodePort: 32322
+  
