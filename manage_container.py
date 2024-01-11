@@ -5,12 +5,18 @@ import copy
 import os
 import time
 
-def config_container(config):
-    with open('template/template.yaml', 'r', encoding='utf-8') as f:
+def config_job(config):
+    with open('template/template_job.yaml', 'r', encoding='utf-8') as f:
         template_yaml = yaml.load_all(f.read(), Loader=yaml.FullLoader)
     template_yaml = list(template_yaml)             # 包括pod和service
 
-    container = munch.Munch.fromDict(template_yaml[0])  # 转化为类
+    job = munch.Munch.fromDict(template_yaml[0])  # 转化为类
+    job.metadata.name = 'job-' + config['name']
+    job.spec.selector.matchLabels.user = config['name']
+    # 设置重新尝试的次数
+    job.spec.backoffLimit = config['backoffLimit']
+    
+    container = job.spec.template
     service = munch.Munch.fromDict(template_yaml[1])
 
     # 设置pod的name和label
@@ -25,17 +31,17 @@ def config_container(config):
     container.spec.containers[0].image = config['image']
     container.spec.containers[0].name = config['name']  # 容器名
 
-    container.spec.containers[0].lifecycle.preStop.httpGet.path = f'?container={config["name"]}&image={config["image"]}'    # 传递参数，便于钩子函数保存镜像
+    # container.spec.containers[0].lifecycle.preStop.httpGet.path = f'?container={config["name"]}&image={config["image"]}'    # 传递参数，便于钩子函数保存镜像
 
     # 设置密码和启动命令，以及退出前保存镜像
-    tmp = 'curl "http://192.168.1.104:8000/' + f'?container={config["name"]}&image={config["image"]}";'                        # 通知保存镜像
-
+    # tmp = 'curl "http://192.168.1.104:8000/' + f'?container={config["name"]}&image={config["image"]}";'                        # 通知保存镜像（使用rpc比较好）
+    tmp = ''
     file_path = 'template/base_cmd.txt'
     with open(file_path, 'r') as file:
         base_cmd = file.read().replace('\n', ' ')   # 包含更新源、更新环境变量的代码
 
-    container.spec.containers[0].args = [ base_cmd + ' echo -e "{}\\n{}\\n"|passwd;  service ssh restart; {} while true; do sleep 3600; done; {}'.format(config['password'], config['password'], config['cmd'], tmp) ]
-    # container.spec.containers[0].args = [ 'apt update; echo y|apt install openssh-server; echo -e "{}\\n{}\\n"|passwd;  service ssh restart; {} while true; do sleep 3600; done; '.format(config['password'], config['password'], config['cmd']) ]
+    # container.spec.containers[0].args = [ base_cmd + ' echo -e "{}\\n{}\\n"|passwd;  service ssh restart; {} while true; do sleep 3600; done; {}'.format(config['password'], config['password'], config['cmd'], tmp) ]
+    container.spec.containers[0].args = [ base_cmd + ' echo -e "{}\\n{}\\n"|passwd;  service ssh restart; {} {}'.format(config['password'], config['password'], config['cmd'], tmp) ]
 
     # 挂载
     container.spec.containers[0].volumeMounts[0].mountPath = config['path']
@@ -61,10 +67,10 @@ def config_container(config):
     # 保存yaml文件
     save_path = './pod_config/{}.yaml'.format(config['name'])
     with open(save_path, 'w', encoding='utf-8') as f:
-        yaml.safe_dump_all(documents=[container, service], stream=f, allow_unicode=True)
+        yaml.safe_dump_all(documents=[job, service], stream=f, allow_unicode=True)
     return save_path, container.metadata.name, service.metadata.name
 
-def start_container(path, pod_name):
+def start_job(path, pod_name):
     os.system('kubectl apply -f {}'.format(path))
     print("----------------------\n \
           Wait for the creation to complete...\n \
@@ -78,13 +84,13 @@ def start_container(path, pod_name):
             break
     print("----------------------\n Finished Successfully!")
 
-def create_container(config):
+def create_job(config):
 
-    # 根据要求创建容器（VM）
-    path, pod_name, svc_name = config_container(config)
+    # 根据要求创建容器（VM or task）
+    path, pod_name, svc_name = config_job(config)
 
     # 启动容器
-    start_container(path, pod_name)
+    start_job(path, pod_name)
 
     # 开启端口(其实可以用nodeport)
     # os.system('nohup kubectl port-forward --address 0.0.0.0 svc/{} {}:22 >> ./log/{} 2>&1 &'.format(svc_name,port,pod_name))    # 获取这条命令的进程（ljx-ssh记得替换）：ps -ef | grep forward | grep svc | grep ljx-ssh

@@ -1,0 +1,85 @@
+apiVersion: batch/v1
+kind: Job      
+metadata:
+  name: pc-job
+spec:
+  ttlSecondsAfterFinished: 300  #  Complete or Failed 300s 后 delete job
+  backoffLimit: 6 # 指定job失败后进行重试的次数。默认是6
+  manualSelector: true
+  selector:
+    matchLabels:
+      user: myubuntu
+  template:
+    metadata:
+      #Pod的名称，全局唯一
+      name: myubuntu
+      labels:
+        user: myubuntu
+    spec:
+      # activeDeadlineSeconds: 300
+      #设置存储卷 
+      volumes:
+      - name: myubuntu
+        hostPath:
+          path: /home/jxlai/myubuntu
+
+      dnsPolicy: Default                # 域名解析策略和主机相同，防止不能访问网址
+      restartPolicy: OnFailure                    # OnFailure Never
+      containers:
+      - name: myubuntu                  # 容器名称
+        imagePullPolicy: IfNotPresent   # 拉取策略
+        image: ubuntu-ssh:v1            # 镜像
+        command: [ "/bin/bash", "-c", "--" ]
+        args: [ "echo -e '123456\n123456\n' | passwd; service ssh restart; while true; do sleep 3600; done; " ]  # 不加这个while循环的话，这个pod很快就complete
+        volumeMounts:
+        - mountPath: /myubuntu
+          name: myubuntu
+        resources:
+          limits:
+            nvidia.com/gpu: 2 # requesting 1 GPU
+            cpu: "2" # CPU限制，单位是core数. 1 CPU = 1000m CPU 
+            memory: "10Gi" # 内存限制
+          requests:
+            nvidia.com/gpu: 2 # 请求2个vGPUs
+            nvidia.com/gpumem: 3000 # 每个vGPU申请3000m显存 （可选，整数类型）
+            nvidia.com/gpucores: 30 # 每个vGPU的算力为30%实际显卡的算力 （可选，整数类型）
+            cpu: "2"
+            memory: "10Gi" 
+        ports:
+        - name: ubuntu-port
+          containerPort: 22  # 如果hostNetwork: true，hostPort必须跟containerPort一样，所以hostPort一般不写，端口也是占用宿主机上的端口
+          protocol: TCP
+        # 就绪探测、健康探测、钩子函数、环境变量、hostAliases等
+        # lifecycle:
+        #   preStop:  # 主容器终止前钩子
+        #     httpGet:                  # 异常退出前，保存镜像
+        #       path: '?container=myubuntu&image=ubuntu-ssh:v1'           # Url地址
+        #       port: 8000              # 端口
+        #       host: 192.168.1.104     # 主机地址
+        #       scheme: HTTP            # 支持的协议，http或https
+      
+
+      tolerations:            # 容忍（以方便在打了污点的节点上运行）
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      # - key: node-role.kubernetes.io/master # add by ljx，tolerate the master node
+      #   operator: Exists
+      #   effect: NoSchedule
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myubuntu-ssh
+spec:
+  selector:
+    user: myubuntu
+  type: NodePort
+  # type: ClusterIP
+  ports:
+    - name: ssh
+      port: 22        # Service暴露的端口号
+      targetPort: 22  # pod的端口号
+      protocol: TCP
+      nodePort: 32322

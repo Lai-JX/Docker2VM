@@ -4,5 +4,5 @@ do
 done" >> /etc/profile;
 if ! [ -x "$(command -v ssh)" ] || ! [ -x "$(command -v curl)" ]; then
 echo -e "deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy main restricted universe multiverse\ndeb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy-updates main restricted universe multiverse\ndeb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy-backports main restricted universe multiverse\ndeb https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ jammy-security main restricted universe multiverse\n" > /etc/apt/sources.list;
-apt update; echo y|apt install openssh-server; echo -e "PermitRootLogin yes" >> /etc/ssh/sshd_config;
+apt update; echo y|apt install openssh-server; echo y|apt install curl; echo -e "PermitRootLogin yes" >> /etc/ssh/sshd_config;
 fi;
